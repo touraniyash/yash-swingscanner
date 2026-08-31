@@ -334,7 +334,8 @@ def main():
                 threads=False,
                 progress=False
             )
-
+            
+print("RAW COLUMNS:", raw.columns)
         except Exception as e:
 
             print(
