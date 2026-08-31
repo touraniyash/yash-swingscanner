@@ -1,0 +1,72 @@
+{
+  "updated": "Demo data \u2014 run GitHub Action for real data",
+  "sectors": [
+    {
+      "sector": "IT",
+      "w1": 3.2,
+      "m1": 8.1,
+      "breadth": 78,
+      "score": 86
+    },
+    {
+      "sector": "Pharma",
+      "w1": 2.1,
+      "m1": 5.4,
+      "breadth": 70,
+      "score": 78
+    },
+    {
+      "sector": "Auto",
+      "w1": 1.7,
+      "m1": 4.2,
+      "breadth": 65,
+      "score": 72
+    }
+  ],
+  "stocks": [
+    {
+      "symbol": "COFORGE",
+      "sector": "IT",
+      "rating": 94,
+      "action": "BUY NOW",
+      "rsi": 64,
+      "vol": 1.8,
+      "w1": 3.4,
+      "m1": 8.2,
+      "setup": "Breakout"
+    },
+    {
+      "symbol": "HCLTECH",
+      "sector": "IT",
+      "rating": 88,
+      "action": "BUY / WATCH",
+      "rsi": 61,
+      "vol": 1.5,
+      "w1": 3.1,
+      "m1": 7.1,
+      "setup": "Pullback"
+    },
+    {
+      "symbol": "SUNPHARMA",
+      "sector": "Pharma",
+      "rating": 84,
+      "action": "BUY / WATCH",
+      "rsi": 62,
+      "vol": 1.4,
+      "w1": 2.2,
+      "m1": 5.6,
+      "setup": "Pullback"
+    },
+    {
+      "symbol": "CIPLA",
+      "sector": "Pharma",
+      "rating": 76,
+      "action": "WAIT",
+      "rsi": 57,
+      "vol": 1.1,
+      "w1": 2.2,
+      "m1": 4.9,
+      "setup": "None"
+    }
+  ]
+}
