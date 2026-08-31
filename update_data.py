@@ -613,6 +613,17 @@ def main():
             sector_map.get(stock["sector"], 0)
         )
 
+        # =========================
+        # FINAL 100-POINT SCORE
+        # =========================
+        # Sector strength  : 20
+        # EMA trend        : 25
+        # Momentum         : 15
+        # RSI              : 10
+        # Volume           : 10
+        # Setup            : 10
+        # Risk/volatility  : 10
+        # TOTAL            : 100
         total = (
             sector_score
             + stock["trend"]
@@ -675,8 +686,11 @@ def main():
             and stock["m1"] > 0
         )
 
+        # BUY NOW prefers the stronger RSI zone.
+        # 70+ is treated as extended and therefore not an
+        # immediate-buy condition.
         good_rsi = (
-            55 <= stock["rsi"] <= 70
+            55 <= stock["rsi"] <= 68
         )
 
         strong_volume = (
@@ -737,6 +751,15 @@ def main():
                 "sector": stock["sector"],
                 "rating": int(min(100, total)),
                 "action": action,
+
+                # Score breakdown — these always add up to 100.
+                "sector_score": sector_score,
+                "trend_score": stock["trend"],
+                "momentum_score": stock["momentum"],
+                "rsi_score": stock["rs"],
+                "volume_score": stock["volscore"],
+                "setup_score": stock["setup"],
+                "risk_score": stock["risk"],
                 "entry": price,
                 "stop": stop,
                 "target": target,
@@ -755,6 +778,32 @@ def main():
                 "setup": setup_name,
             }
         )
+
+    # =========================
+    # SCORE VALIDATION
+    # =========================
+    for item in output:
+        score_parts = (
+            item["sector_score"]
+            + item["trend_score"]
+            + item["momentum_score"]
+            + item["rsi_score"]
+            + item["volume_score"]
+            + item["setup_score"]
+            + item["risk_score"]
+        )
+
+        if score_parts != item["rating"]:
+            raise RuntimeError(
+                f"Score mismatch for {item['symbol']}: "
+                f"parts={score_parts}, rating={item['rating']}"
+            )
+
+        if not 0 <= item["rating"] <= 100:
+            raise RuntimeError(
+                f"Invalid rating for {item['symbol']}: "
+                f"{item['rating']}"
+            )
 
     # =========================
     # SORT
@@ -790,11 +839,27 @@ def main():
             allow_nan=False,
         )
 
+    buy_now_count = sum(
+        1 for item in output
+        if item["action"] == "BUY NOW"
+    )
+
+    buy_watch_count = sum(
+        1 for item in output
+        if item["action"] == "BUY / WATCH"
+    )
+
     print(
         "Scanned",
         len(output),
         "stocks; top rating",
         output[0]["rating"] if output else None,
+    )
+    print(
+        "BUY NOW:",
+        buy_now_count,
+        "| BUY / WATCH:",
+        buy_watch_count,
     )
 
 
