@@ -580,28 +580,30 @@ def main():
         # ACTION
         # =========================
 
-       if (
-    total >= 85
-    and sector_score >= 10
-    and strong_ema_trend
-    and positive_momentum
-    and valid_setup
-    and good_rr
-):
+         if (
+        total >= 85
+        and sector_score >= 10
+        and strong_ema_trend
+        and positive_momentum
+        and valid_setup
+        and good_rr
+    ):
+        action = "BUY NOW"
 
-            action = "BUY NOW"
+    elif (
+        total >= 75
+        and sector_score >= 10
+        and strong_ema_trend
+        and positive_momentum
+        and good_rr
+    ):
+        action = "BUY / WATCH"
 
-        elif (
-            total >= 75
-            and sector_score >= 10
-            and strong_ema_trend
-            and positive_momentum
-            and good_rr
-        ):
+    elif total >= 60:
+        action = "WAIT"
 
-            action = "BUY / WATCH"
-
-        elif total >= 60:
+    else:
+        action = "AVOID"
 
             action = "WAIT"
 
