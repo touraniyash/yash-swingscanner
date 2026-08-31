@@ -576,15 +576,17 @@ def main():
             rr >= 2
         )
 
-        # =========================
-        # ACTION
-        # =========================
+    # =========================
+    # ACTION
+    # =========================
 
-         if (
+    if (
         total >= 85
-        and sector_score >= 10
+        and sector_score >= 12
         and strong_ema_trend
         and positive_momentum
+        and good_rsi
+        and strong_volume
         and valid_setup
         and good_rr
     ):
@@ -595,6 +597,7 @@ def main():
         and sector_score >= 10
         and strong_ema_trend
         and positive_momentum
+        and good_rsi
         and good_rr
     ):
         action = "BUY / WATCH"
@@ -604,12 +607,6 @@ def main():
 
     else:
         action = "AVOID"
-
-            action = "WAIT"
-
-        else:
-
-            action = "AVOID"
 
         setup_name = (
             "Breakout"
