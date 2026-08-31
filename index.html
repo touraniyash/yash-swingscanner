@@ -1,1 +1,20 @@
-<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Yash Swing Scanner</title><link rel="stylesheet" href="styles.css"></head><body><header><h1>Yash Swing Scanner</h1><p>Sector → Stock → Trade Rating /100</p><span id="updated">Loading…</span></header><main><div class="cards"><div><small>Strong sectors</small><b id="sc">—</b></div><div><small>Stocks scanned</small><b id="nc">—</b></div><div><small>Buy setups</small><b id="bc">—</b></div><div><small>Top rating</small><b id="tr">—</b></div></div><section><h2>Sector strength</h2><div class="table"><table><thead><tr><th>Sector</th><th>1W</th><th>1M</th><th>Breadth</th><th>Score</th></tr></thead><tbody id="sectors"></tbody></table></div></section><section><h2>Best swing setups</h2><div class="table"><table><thead><tr><th>Stock</th><th>Sector</th><th>Rating</th><th>Action</th><th>RSI</th><th>Vol</th><th>1W</th><th>1M</th><th>Setup</th></tr></thead><tbody id="stocks"></tbody></table></div></section><p class="note">Research/screening tool only. Data may be delayed. Confirm the chart, liquidity, stop-loss and risk/reward before trading.</p></main><script src="app.js"></script></body></html>
+<!doctype html>
+<html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Yash Swing Scanner</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<header><div><h1>Yash Swing Scanner</h1><p>Sector → Stock → Trade Rating /100</p></div><span id="updated">Loading…</span></header>
+<main>
+<div class="cards">
+<div><small>Strong sectors</small><b id="sc">—</b></div>
+<div><small>Stocks scanned</small><b id="nc">—</b></div>
+<div><small>BUY setups</small><b id="bc">—</b></div>
+<div><small>Top rating</small><b id="tr">—</b></div>
+</div>
+<section><div class="title"><h2>Strongest sectors</h2><span>Sector score ≥ 60</span></div>
+<div class="table"><table><thead><tr><th>Rank</th><th>Sector / Industry</th><th>1W</th><th>1M</th><th>Breadth</th><th>Score /20</th></tr></thead><tbody id="sectors"></tbody></table></div></section>
+<section><div class="title"><h2>Best swing setups</h2><span>Sorted by rating</span></div>
+<div class="filters"><button class="active" data-f="ALL">All</button><button data-f="BUY">BUY</button><button data-f="WATCH">WATCH</button><button data-f="WAIT">WAIT</button></div>
+<div class="table"><table><thead><tr><th>Stock</th><th>Sector</th><th>Rating</th><th>Action</th><th>Entry</th><th>Stop</th><th>Target</th><th>R:R</th><th>RSI</th><th>Vol</th><th>1W</th><th>1M</th><th>Setup</th></tr></thead><tbody id="stocks"></tbody></table></div></section>
+<section class="legend"><h2>How the /100 score works</h2><div class="scoregrid"><div><b>20</b><span>Sector strength</span></div><div><b>25</b><span>EMA trend</span></div><div><b>15</b><span>Momentum</span></div><div><b>10</b><span>RSI</span></div><div><b>10</b><span>Volume</span></div><div><b>10</b><span>Breakout / pullback</span></div><div><b>10</b><span>Risk / reward</span></div></div></section>
+<p class="note">Screening tool only. Data is historical/EOD and may be delayed. A BUY rating is not a guarantee. Confirm liquidity, chart structure and risk before trading.</p>
+</main><script src="app.js"></script></body></html>
