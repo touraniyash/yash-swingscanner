@@ -580,16 +580,14 @@ def main():
         # ACTION
         # =========================
 
-        if (
-            total >= 85
-            and sector_score >= 12
-            and strong_ema_trend
-            and positive_momentum
-            and good_rsi
-            and strong_volume
-            and valid_setup
-            and good_rr
-        ):
+       if (
+    total >= 85
+    and sector_score >= 10
+    and strong_ema_trend
+    and positive_momentum
+    and valid_setup
+    and good_rr
+):
 
             action = "BUY NOW"
 
