@@ -1,5 +1,2 @@
-# Yash Swing Scanner v2
-
-Free EOD swing-trading dashboard. The updater fetches the current Nifty 500 constituent list from NSE Indices and historical prices through yfinance, then calculates sector strength and a 100-point swing score. GitHub Actions updates `data.json`; GitHub Pages hosts the site.
-
-Data is for research/screening and may be delayed or unavailable. Do not treat the rating as investment advice.
+# Yash Swing Scanner V3
+A stricter presentation layer for the automatic EOD swing scanner. V3 keeps the existing data updater and adds a Top 10 view, clear signal thresholds, and trade levels. This is a screening/education tool, not financial advice.
