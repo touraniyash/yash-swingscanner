@@ -1,0 +1,33 @@
+name: Backtest Swing Strategy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install packages
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas numpy yfinance
+
+      - name: Run backtest
+        run: |
+          python backtest.py
+
+      - name: Save backtest results
+        uses: actions/upload-artifact@v4
+        with:
+          name: backtest-results
+          path: backtest_results.csv
+          if-no-files-found: error
