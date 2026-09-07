@@ -1,0 +1,45 @@
+name: Optimize Swing Strategy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  optimize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install packages
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas numpy yfinance
+
+      - name: Run optimizer
+        run: |
+          python optimize_backtest.py
+
+      - name: Check output files
+        run: |
+          echo "Created files:"
+          ls -lh optimization_results.csv best_strategy.json best_trades.csv
+          test -s optimization_results.csv
+          test -s best_strategy.json
+          test -s best_trades.csv
+
+      - name: Upload optimization results
+        uses: actions/upload-artifact@v4
+        with:
+          name: swing-strategy-optimization
+          path: |
+            optimization_results.csv
+            best_strategy.json
+            best_trades.csv
+          if-no-files-found: error
