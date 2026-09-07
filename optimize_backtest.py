@@ -17,7 +17,7 @@ START_DATE = "2020-01-01"
 END_DATE = date.today().isoformat()
 
 MAX_SYMBOLS = 500
-BATCH_SIZE = 50
+BATCH_SIZE = 25
 
 MIN_TRADES = 150
 
@@ -259,75 +259,51 @@ def prepare(df):
 # ============================================================
 
 def download_batch(symbols):
+    """Download symbols one at a time with timeout/retry protection.
 
-    if not symbols:
-        return {}
-
-    print(
-        f"Downloading batch of {len(symbols)} stocks..."
-    )
-
-    try:
-
-        raw = yf.download(
-            symbols,
-            start=START_DATE,
-            end=END_DATE,
-            auto_adjust=False,
-            progress=False,
-            threads=True,
-            group_by="ticker",
-        )
-
-    except Exception as exc:
-
-        print(
-            "Batch download failed:",
-            exc
-        )
-
-        return {}
-
+    A single Yahoo Finance request must never block the whole optimizer.
+    """
     result = {}
 
-    # Single ticker can have normal columns
-    if len(symbols) == 1:
+    for n, symbol in enumerate(symbols, 1):
+        print(f"Downloading {symbol} ({n}/{len(symbols)})...", flush=True)
 
-        df = prepare(raw)
+        success = False
 
-        if df is not None:
-            result[symbols[0]] = df
-
-        return result
-
-    # Multiple tickers
-    for symbol in symbols:
-
-        try:
-
-            if (
-                not isinstance(
-                    raw.columns,
-                    pd.MultiIndex
+        for attempt in range(1, 4):
+            try:
+                raw = yf.download(
+                    symbol,
+                    start=START_DATE,
+                    end=END_DATE,
+                    auto_adjust=False,
+                    progress=False,
+                    threads=False,
+                    group_by="column",
+                    timeout=15,
                 )
-            ):
-                continue
 
-            if symbol not in raw.columns.levels[0]:
-                continue
+                df = prepare(raw)
 
-            df = raw[symbol]
+                if df is not None:
+                    result[symbol] = df
+                    print(f"  OK {symbol}: {len(df)} rows", flush=True)
+                else:
+                    print(f"  SKIP {symbol}: insufficient/invalid data", flush=True)
 
-            df = prepare(df)
+                success = True
+                break
 
-            if df is not None:
-                result[symbol] = df
+            except Exception as exc:
+                print(
+                    f"  Attempt {attempt}/3 failed for {symbol}: {exc}",
+                    flush=True,
+                )
+                if attempt < 3:
+                    time.sleep(2 * attempt)
 
-        except Exception as exc:
-
-            print(
-                f"{symbol}: skipped - {exc}"
-            )
+        if not success:
+            print(f"  FAILED {symbol}: skipped after 3 attempts", flush=True)
 
     return result
 
@@ -908,13 +884,10 @@ def main():
         )
 
         print(
-            f"Progress: "
-            f"{min(start + BATCH_SIZE, len(symbols))}"
-            f"/{len(symbols)}"
-            f" | usable: {len(data)}"
+            f"Progress: {min(start + BATCH_SIZE, len(symbols))}/{len(symbols)}"
+            f" | usable: {len(data)}",
+            flush=True,
         )
-
-        time.sleep(1)
 
     if not data:
 
@@ -927,7 +900,14 @@ def main():
     print(
         f"Usable symbols: "
         f"{len(data)}"
+    , flush=True)
+
+    failed_symbols = [s for s in symbols if s not in data]
+    Path("failed_symbols.txt").write_text(
+        "\n".join(failed_symbols),
+        encoding="utf-8",
     )
+    print(f"Failed/unusable symbols: {len(failed_symbols)}", flush=True)
 
     print()
 
@@ -1024,7 +1004,8 @@ def main():
     )
 
     print(
-        "Stage 1 complete."
+        "Stage 1 complete.",
+        flush=True
     )
 
     print()
@@ -1133,7 +1114,8 @@ def main():
         )
 
     print(
-        "Stage 2 complete."
+        "Stage 2 complete.",
+        flush=True
     )
 
     print()
@@ -1250,7 +1232,8 @@ def main():
     )
 
     print(
-        "Stage 3 complete."
+        "Stage 3 complete.",
+        flush=True
     )
 
     print()
@@ -1372,7 +1355,8 @@ def main():
     print("=" * 70)
 
     print(
-        "OPTIMIZATION COMPLETE"
+        "OPTIMIZATION COMPLETE",
+        flush=True
     )
 
     print("=" * 70)
