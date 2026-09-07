@@ -25,9 +25,20 @@ jobs:
         run: |
           python backtest.py
 
+      - name: Check output files
+        run: |
+          echo "Workspace:"
+          pwd
+          echo "CSV files:"
+          find . -maxdepth 2 -type f -name "*.csv" -print
+          test -f backtest_results.csv
+          test -f backtest_summary.csv
+
       - name: Save backtest results
         uses: actions/upload-artifact@v4
         with:
           name: backtest-results
-          path: backtest_results.csv
+          path: |
+            backtest_results.csv
+            backtest_summary.csv
           if-no-files-found: error
