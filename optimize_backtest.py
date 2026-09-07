@@ -1,30 +1,3 @@
-"""
-Yash Swing Strategy - staged parameter optimizer
-
-This is designed to improve the baseline backtest rather than simply
-increase win rate. It searches for parameter combinations that have:
-- positive expectancy
-- profit factor above 1
-- enough trades
-- controlled drawdown
-
-Data:
-- Yahoo Finance daily NSE data
-- Universe comes from symbols.txt
-
-Stage 1: optimize signal filters
-Stage 2: optimize exits/holding period for the best signal filters
-Stage 3: optimize entry method for the best candidates
-
-Outputs:
-- optimization_results.csv
-- best_strategy.json
-- best_trades.csv
-
-Important:
-This is a research/backtest tool. It does not guarantee future returns.
-"""
-
 import json
 import math
 import time
@@ -35,12 +8,23 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
+
+# ============================================================
+# YASH SWING STRATEGY - FAST PARAMETER OPTIMIZER
+# ============================================================
+
 START_DATE = "2020-01-01"
 END_DATE = date.today().isoformat()
+
+MAX_SYMBOLS = 500
+BATCH_SIZE = 50
+
+MIN_TRADES = 150
+
+SLIPPAGE_PCT_PER_SIDE = 0.05
+
 TARGET_BASE = 2.0
 HOLD_BASE = 10
-MIN_TRADES = 150
-MAX_SYMBOLS = 500
 
 RSI_RANGES = [
     (45, 65),
@@ -49,411 +33,1409 @@ RSI_RANGES = [
     (55, 70),
     (55, 65),
 ]
-VOLUME_MIN = [1.2, 1.5, 2.0, 2.5]
-TARGETS = [1.5, 2.0, 2.5, 3.0]
-STOP_METHODS = ["SIGNAL_LOW", "ATR_1", "ATR_1_5"]
-HOLDS = [5, 10, 15]
-ENTRIES = ["NEXT_OPEN", "SIGNAL_HIGH_NEXT_DAY"]
 
-# Small round-trip slippage assumption. Brokerage/taxes are not fully modeled.
-SLIPPAGE_PCT_PER_SIDE = 0.05
+VOLUME_MIN = [
+    1.2,
+    1.5,
+    2.0,
+    2.5,
+]
 
+TARGETS = [
+    1.5,
+    2.0,
+    2.5,
+    3.0,
+]
+
+STOP_METHODS = [
+    "SIGNAL_LOW",
+    "ATR_1",
+    "ATR_1_5",
+]
+
+HOLDS = [
+    5,
+    10,
+    15,
+]
+
+ENTRIES = [
+    "NEXT_OPEN",
+    "SIGNAL_HIGH_NEXT_DAY",
+]
+
+
+# ============================================================
+# SYMBOL LIST
+# ============================================================
 
 def read_symbols():
-    p = Path("symbols.txt")
-    if not p.exists():
-        raise FileNotFoundError("symbols.txt is missing")
-    symbols = [x.strip() for x in p.read_text().splitlines() if x.strip()]
-    return symbols[:MAX_SYMBOLS]
 
+    p = Path("symbols.txt")
+
+    if not p.exists():
+        raise FileNotFoundError(
+            "symbols.txt is missing"
+        )
+
+    symbols = [
+        x.strip()
+        for x in p.read_text().splitlines()
+        if x.strip()
+    ]
+
+    symbols = symbols[:MAX_SYMBOLS]
+
+    # Make sure Yahoo symbols have .NS
+    clean = []
+
+    for s in symbols:
+
+        if not s.endswith(".NS"):
+            s = s + ".NS"
+
+        clean.append(s)
+
+    return clean
+
+
+# ============================================================
+# RSI
+# ============================================================
 
 def rsi(series, period=14):
-    delta = series.diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-    avg_gain = gain.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
-    avg_loss = loss.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
-    rs = avg_gain / avg_loss.replace(0, np.nan)
-    return (100 - 100 / (1 + rs)).fillna(50)
 
+    delta = series.diff()
+
+    gain = delta.clip(lower=0)
+
+    loss = -delta.clip(upper=0)
+
+    avg_gain = gain.ewm(
+        alpha=1 / period,
+        adjust=False,
+        min_periods=period
+    ).mean()
+
+    avg_loss = loss.ewm(
+        alpha=1 / period,
+        adjust=False,
+        min_periods=period
+    ).mean()
+
+    rs = avg_gain / avg_loss.replace(
+        0,
+        np.nan
+    )
+
+    return (
+        100
+        - 100 / (1 + rs)
+    ).fillna(50)
+
+
+# ============================================================
+# ATR
+# ============================================================
+
+def average_true_range(df, period=14):
+
+    previous_close = df["Close"].shift(1)
+
+    tr = pd.concat(
+        [
+            df["High"] - df["Low"],
+            (df["High"] - previous_close).abs(),
+            (df["Low"] - previous_close).abs(),
+        ],
+        axis=1
+    ).max(axis=1)
+
+    return tr.ewm(
+        alpha=1 / period,
+        adjust=False,
+        min_periods=period
+    ).mean()
+
+
+# ============================================================
+# PREPARE DATA
+# ============================================================
 
 def prepare(df):
+
     if df is None or df.empty:
         return None
 
-    if isinstance(df.columns, pd.MultiIndex):
+    if isinstance(
+        df.columns,
+        pd.MultiIndex
+    ):
         df.columns = df.columns.get_level_values(0)
 
-    cols = ["Open", "High", "Low", "Close", "Volume"]
-    if any(c not in df.columns for c in cols):
+    required = [
+        "Open",
+        "High",
+        "Low",
+        "Close",
+        "Volume",
+    ]
+
+    if any(
+        c not in df.columns
+        for c in required
+    ):
         return None
 
-    df = df[cols].copy().dropna()
+    df = df[required].copy()
+
+    df = df.dropna()
+
     if len(df) < 220:
         return None
 
-    df["EMA20"] = df["Close"].ewm(span=20, adjust=False).mean()
-    df["EMA50"] = df["Close"].ewm(span=50, adjust=False).mean()
-    df["EMA200"] = df["Close"].ewm(span=200, adjust=False).mean()
-    df["RSI"] = rsi(df["Close"])
-    df["VolAvg20"] = df["Volume"].rolling(20).mean()
-    df["VolumeRatio"] = df["Volume"] / df["VolAvg20"]
-    df["ATR"] = average_true_range(df, 14)
-    return df.dropna(subset=["EMA200", "RSI", "VolumeRatio", "ATR"])
+    df["EMA20"] = (
+        df["Close"]
+        .ewm(
+            span=20,
+            adjust=False
+        )
+        .mean()
+    )
+
+    df["EMA50"] = (
+        df["Close"]
+        .ewm(
+            span=50,
+            adjust=False
+        )
+        .mean()
+    )
+
+    df["EMA200"] = (
+        df["Close"]
+        .ewm(
+            span=200,
+            adjust=False
+        )
+        .mean()
+    )
+
+    df["RSI"] = rsi(
+        df["Close"]
+    )
+
+    df["VolAvg20"] = (
+        df["Volume"]
+        .rolling(20)
+        .mean()
+    )
+
+    df["VolumeRatio"] = (
+        df["Volume"]
+        / df["VolAvg20"]
+    )
+
+    df["ATR"] = average_true_range(
+        df,
+        14
+    )
+
+    df = df.dropna(
+        subset=[
+            "EMA200",
+            "RSI",
+            "VolumeRatio",
+            "ATR",
+        ]
+    )
+
+    return df
 
 
-def average_true_range(df, period=14):
-    prev_close = df["Close"].shift(1)
-    tr = pd.concat([
-        df["High"] - df["Low"],
-        (df["High"] - prev_close).abs(),
-        (df["Low"] - prev_close).abs(),
-    ], axis=1).max(axis=1)
-    return tr.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
+# ============================================================
+# BATCH DOWNLOAD
+# ============================================================
 
+def download_batch(symbols):
 
-def download_symbol(symbol):
+    if not symbols:
+        return {}
+
+    print(
+        f"Downloading batch of {len(symbols)} stocks..."
+    )
+
     try:
-        df = yf.download(
-            symbol,
+
+        raw = yf.download(
+            symbols,
             start=START_DATE,
             end=END_DATE,
             auto_adjust=False,
             progress=False,
-            threads=False,
+            threads=True,
+            group_by="ticker",
         )
-        return prepare(df)
+
     except Exception as exc:
-        print(f"{symbol}: download/prepare failed: {exc}")
-        return None
+
+        print(
+            "Batch download failed:",
+            exc
+        )
+
+        return {}
+
+    result = {}
+
+    # Single ticker can have normal columns
+    if len(symbols) == 1:
+
+        df = prepare(raw)
+
+        if df is not None:
+            result[symbols[0]] = df
+
+        return result
+
+    # Multiple tickers
+    for symbol in symbols:
+
+        try:
+
+            if (
+                not isinstance(
+                    raw.columns,
+                    pd.MultiIndex
+                )
+            ):
+                continue
+
+            if symbol not in raw.columns.levels[0]:
+                continue
+
+            df = raw[symbol]
+
+            df = prepare(df)
+
+            if df is not None:
+                result[symbol] = df
+
+        except Exception as exc:
+
+            print(
+                f"{symbol}: skipped - {exc}"
+            )
+
+    return result
 
 
-def signal(df, i, rsi_lo, rsi_hi, volume_min):
+# ============================================================
+# SIGNAL
+# ============================================================
+
+def signal(
+    df,
+    i,
+    rsi_lo,
+    rsi_hi,
+    volume_min
+):
+
     row = df.iloc[i]
+
     return bool(
+
         row["Close"] > row["EMA20"]
+
         and row["EMA20"] > row["EMA50"]
+
         and row["EMA50"] > row["EMA200"]
+
         and rsi_lo <= row["RSI"] <= rsi_hi
+
         and row["VolumeRatio"] >= volume_min
+
     )
 
 
-def get_entry(df, signal_i, entry_method):
+# ============================================================
+# ENTRY
+# ============================================================
+
+def get_entry(
+    df,
+    signal_i,
+    entry_method
+):
+
     if signal_i + 1 >= len(df):
         return None
 
-    next_day = df.iloc[signal_i + 1]
+    next_day = df.iloc[
+        signal_i + 1
+    ]
 
     if entry_method == "NEXT_OPEN":
-        return signal_i + 1, float(next_day["Open"])
 
-    # Breakout entry: buy at the signal candle high if next day's range
-    # reaches that price. If it gaps above, use next day's open.
-    signal_high = float(df.iloc[signal_i]["High"])
-    if float(next_day["High"]) >= signal_high:
-        entry = min(float(next_day["Open"]), signal_high)
-        return signal_i + 1, entry
+        return (
+            signal_i + 1,
+            float(next_day["Open"])
+        )
+
+    signal_high = float(
+        df.iloc[signal_i]["High"]
+    )
+
+    if (
+        float(next_day["High"])
+        >= signal_high
+    ):
+
+        entry = min(
+            float(next_day["Open"]),
+            signal_high
+        )
+
+        return (
+            signal_i + 1,
+            entry
+        )
 
     return None
 
 
-def trade(df, signal_i, target_r, stop_method, hold_days, entry_method):
-    entry_info = get_entry(df, signal_i, entry_method)
+# ============================================================
+# TRADE
+# ============================================================
+
+def trade(
+    df,
+    signal_i,
+    target_r,
+    stop_method,
+    hold_days,
+    entry_method
+):
+
+    entry_info = get_entry(
+        df,
+        signal_i,
+        entry_method
+    )
+
     if entry_info is None:
         return None
 
     entry_i, entry = entry_info
-    signal_row = df.iloc[signal_i]
+
+    signal_row = df.iloc[
+        signal_i
+    ]
 
     if stop_method == "SIGNAL_LOW":
-        stop = float(signal_row["Low"])
+
+        stop = float(
+            signal_row["Low"]
+        )
+
     elif stop_method == "ATR_1":
-        stop = entry - float(signal_row["ATR"])
+
+        stop = (
+            entry
+            - float(signal_row["ATR"])
+        )
+
     else:
-        stop = entry - 1.5 * float(signal_row["ATR"])
+
+        stop = (
+            entry
+            - 1.5
+            * float(signal_row["ATR"])
+        )
 
     risk = entry - stop
-    if not np.isfinite(risk) or risk <= 0:
+
+    if (
+        not np.isfinite(risk)
+        or risk <= 0
+    ):
         return None
 
-    target = entry + target_r * risk
-    last_i = min(entry_i + hold_days - 1, len(df) - 1)
+    target = (
+        entry
+        + target_r * risk
+    )
+
+    last_i = min(
+        entry_i + hold_days - 1,
+        len(df) - 1
+    )
 
     exit_i = last_i
-    exit_price = float(df.iloc[last_i]["Close"])
+
+    exit_price = float(
+        df.iloc[last_i]["Close"]
+    )
+
     reason = "TIME"
 
-    for j in range(entry_i, last_i + 1):
+    for j in range(
+        entry_i,
+        last_i + 1
+    ):
+
         row = df.iloc[j]
-        low = float(row["Low"])
-        high = float(row["High"])
 
-        # Conservative if both stop and target occur on one daily candle.
+        low = float(
+            row["Low"]
+        )
+
+        high = float(
+            row["High"]
+        )
+
+        # Conservative:
+        # stop checked before target.
         if low <= stop:
+
             exit_i = j
+
             exit_price = stop
+
             reason = "STOP"
-            break
-        if high >= target:
-            exit_i = j
-            exit_price = target
-            reason = "TARGET"
+
             break
 
-    # Apply a simple 0.05% per-side slippage assumption.
-    effective_entry = entry * (1 + SLIPPAGE_PCT_PER_SIDE / 100)
-    effective_exit = exit_price * (1 - SLIPPAGE_PCT_PER_SIDE / 100)
-    r_value = (effective_exit - effective_entry) / risk
+        if high >= target:
+
+            exit_i = j
+
+            exit_price = target
+
+            reason = "TARGET"
+
+            break
+
+    effective_entry = (
+        entry
+        * (
+            1
+            + SLIPPAGE_PCT_PER_SIDE
+            / 100
+        )
+    )
+
+    effective_exit = (
+        exit_price
+        * (
+            1
+            - SLIPPAGE_PCT_PER_SIDE
+            / 100
+        )
+    )
+
+    r_value = (
+        effective_exit
+        - effective_entry
+    ) / risk
 
     return {
-        "SignalDate": df.index[signal_i].date().isoformat(),
-        "EntryDate": df.index[entry_i].date().isoformat(),
-        "ExitDate": df.index[exit_i].date().isoformat(),
-        "Entry": round(entry, 4),
-        "Stop": round(stop, 4),
-        "Target": round(target, 4),
-        "Exit": round(exit_price, 4),
-        "R": round(r_value, 5),
-        "ReturnPct": round((effective_exit / effective_entry - 1) * 100, 5),
-        "HoldDays": int(exit_i - entry_i + 1),
-        "ExitReason": reason,
+
+        "SignalDate":
+            df.index[signal_i]
+            .date()
+            .isoformat(),
+
+        "EntryDate":
+            df.index[entry_i]
+            .date()
+            .isoformat(),
+
+        "ExitDate":
+            df.index[exit_i]
+            .date()
+            .isoformat(),
+
+        "Entry":
+            round(entry, 4),
+
+        "Stop":
+            round(stop, 4),
+
+        "Target":
+            round(target, 4),
+
+        "Exit":
+            round(exit_price, 4),
+
+        "R":
+            round(r_value, 5),
+
+        "ReturnPct":
+            round(
+                (
+                    effective_exit
+                    / effective_entry
+                    - 1
+                )
+                * 100,
+                5
+            ),
+
+        "HoldDays":
+            int(
+                exit_i
+                - entry_i
+                + 1
+            ),
+
+        "ExitReason":
+            reason,
     }
 
 
-def run_candidate(data, rsi_lo, rsi_hi, vol_min, target_r, stop_method, hold_days, entry_method):
+# ============================================================
+# RUN CANDIDATE
+# ============================================================
+
+def run_candidate(
+    data,
+    rsi_lo,
+    rsi_hi,
+    volume_min,
+    target_r,
+    stop_method,
+    hold_days,
+    entry_method
+):
+
     trades = []
+
     for symbol, df in data.items():
+
         last_signal_i = -9999
-        for i in range(len(df) - 1):
-            if i - last_signal_i < 15:
-                continue
-            if not signal(df, i, rsi_lo, rsi_hi, vol_min):
+
+        for i in range(
+            len(df) - 1
+        ):
+
+            if (
+                i - last_signal_i
+                < 15
+            ):
                 continue
 
-            t = trade(df, i, target_r, stop_method, hold_days, entry_method)
+            if not signal(
+                df,
+                i,
+                rsi_lo,
+                rsi_hi,
+                volume_min
+            ):
+                continue
+
+            t = trade(
+                df,
+                i,
+                target_r,
+                stop_method,
+                hold_days,
+                entry_method
+            )
+
             if t is None:
                 continue
 
-            t["Symbol"] = symbol.replace(".NS", "")
-            t["RSI"] = round(float(df.iloc[i]["RSI"]), 2)
-            t["VolumeRatio"] = round(float(df.iloc[i]["VolumeRatio"]), 2)
+            t["Symbol"] = (
+                symbol.replace(
+                    ".NS",
+                    ""
+                )
+            )
+
+            t["RSI"] = round(
+                float(
+                    df.iloc[i]["RSI"]
+                ),
+                2
+            )
+
+            t["VolumeRatio"] = round(
+                float(
+                    df.iloc[i][
+                        "VolumeRatio"
+                    ]
+                ),
+                2
+            )
+
             t["TargetR"] = target_r
-            t["StopMethod"] = stop_method
-            t["HoldPlan"] = hold_days
-            t["EntryMethod"] = entry_method
+
+            t["StopMethod"] = (
+                stop_method
+            )
+
+            t["HoldPlan"] = (
+                hold_days
+            )
+
+            t["EntryMethod"] = (
+                entry_method
+            )
+
             t["RSILow"] = rsi_lo
             t["RSIHigh"] = rsi_hi
-            t["VolumeMin"] = vol_min
-            trades.append(t)
-            last_signal_i = i
-    return pd.DataFrame(trades)
+            t["VolumeMin"] = volume_min
 
+            trades.append(t)
+
+            last_signal_i = i
+
+    return pd.DataFrame(
+        trades
+    )
+
+
+# ============================================================
+# METRICS
+# ============================================================
 
 def metrics(trades):
+
     if trades.empty:
         return None
 
     r = trades["R"].astype(float)
+
     wins = r[r > 0]
+
     losses = r[r < 0]
 
     gross_profit = wins.sum()
-    gross_loss = abs(losses.sum())
-    pf = gross_profit / gross_loss if gross_loss > 0 else math.inf
-    equity = r.cumsum()
-    dd = equity - equity.cummax()
 
-    win_rate = (r > 0).mean() * 100
+    gross_loss = abs(
+        losses.sum()
+    )
+
+    if gross_loss > 0:
+        pf = (
+            gross_profit
+            / gross_loss
+        )
+    else:
+        pf = math.inf
+
+    equity = r.cumsum()
+
+    drawdown = (
+        equity
+        - equity.cummax()
+    )
+
+    win_rate = (
+        (r > 0).mean()
+        * 100
+    )
+
     expectancy = r.mean()
+
     total_r = r.sum()
 
-    # Score favors profitability and PF, but penalizes deep drawdown.
+    max_dd = float(
+        drawdown.min()
+    )
+
     score = (
+
         expectancy * 100
+
         + min(pf, 3) * 15
-        + min(win_rate, 70) * 0.10
-        - abs(dd.min()) * 0.05
+
+        + min(
+            win_rate,
+            70
+        ) * 0.10
+
+        - abs(max_dd)
+        * 0.05
+
     )
 
     return {
-        "Trades": len(r),
-        "WinRatePct": round(win_rate, 2),
-        "TotalR": round(total_r, 2),
-        "AverageR": round(expectancy, 4),
-        "ProfitFactor": round(pf, 4) if math.isfinite(pf) else 999,
-        "MaxDrawdownR": round(float(dd.min()), 2),
-        "Score": round(score, 4),
+
+        "Trades":
+            len(r),
+
+        "WinRatePct":
+            round(
+                win_rate,
+                2
+            ),
+
+        "TotalR":
+            round(
+                total_r,
+                2
+            ),
+
+        "AverageR":
+            round(
+                expectancy,
+                4
+            ),
+
+        "ProfitFactor":
+            round(
+                pf,
+                4
+            )
+            if math.isfinite(pf)
+            else 999,
+
+        "MaxDrawdownR":
+            round(
+                max_dd,
+                2
+            ),
+
+        "Score":
+            round(
+                score,
+                4
+            ),
     }
 
 
-def record_result(rows, params, m):
-    if m is None:
+# ============================================================
+# RECORD RESULT
+# ============================================================
+
+def record_result(
+    rows,
+    params,
+    metrics_result
+):
+
+    if metrics_result is None:
         return
-    if m["Trades"] < MIN_TRADES:
+
+    if (
+        metrics_result["Trades"]
+        < MIN_TRADES
+    ):
         return
+
     row = dict(params)
-    row.update(m)
+
+    row.update(
+        metrics_result
+    )
+
     rows.append(row)
 
 
+# ============================================================
+# MAIN
+# ============================================================
+
 def main():
+
     print("=" * 70)
-    print("YASH SWING STRATEGY - PARAMETER OPTIMIZER")
+
+    print(
+        "YASH SWING STRATEGY"
+        " - FAST PARAMETER OPTIMIZER"
+    )
+
     print("=" * 70)
-    print(f"Data: {START_DATE} to {END_DATE}")
-    print(f"Minimum trades per candidate: {MIN_TRADES}")
-    print(f"Slippage: {SLIPPAGE_PCT_PER_SIDE}% per side")
+
+    print(
+        f"Data: {START_DATE}"
+        f" to {END_DATE}"
+    )
+
+    print(
+        f"Minimum trades: {MIN_TRADES}"
+    )
+
+    print(
+        f"Batch size: {BATCH_SIZE}"
+    )
+
+    print(
+        f"Slippage: "
+        f"{SLIPPAGE_PCT_PER_SIDE}%"
+        " per side"
+    )
+
     print()
 
     symbols = read_symbols()
+
+    print(
+        f"Stocks to download: "
+        f"{len(symbols)}"
+    )
+
+    print()
+
+    # ========================================================
+    # DOWNLOAD ALL DATA
+    # ========================================================
+
     data = {}
 
-    for n, symbol in enumerate(symbols, 1):
-        print(f"[{n}/{len(symbols)}] Downloading {symbol}")
-        df = download_symbol(symbol)
-        if df is not None:
-            data[symbol] = df
-        time.sleep(0.03)
+    for start in range(
+        0,
+        len(symbols),
+        BATCH_SIZE
+    ):
+
+        batch = symbols[
+            start:
+            start + BATCH_SIZE
+        ]
+
+        batch_data = download_batch(
+            batch
+        )
+
+        data.update(
+            batch_data
+        )
+
+        print(
+            f"Progress: "
+            f"{min(start + BATCH_SIZE, len(symbols))}"
+            f"/{len(symbols)}"
+            f" | usable: {len(data)}"
+        )
+
+        time.sleep(1)
 
     if not data:
-        raise RuntimeError("No market data was downloaded.")
+
+        raise RuntimeError(
+            "No market data downloaded."
+        )
 
     print()
-    print(f"Usable symbols: {len(data)}")
+
+    print(
+        f"Usable symbols: "
+        f"{len(data)}"
+    )
+
     print()
 
-    # ---------------- Stage 1: signal filters ----------------
+    # ========================================================
+    # STAGE 1
+    # ========================================================
+
+    print(
+        "STAGE 1 - SIGNAL FILTERS"
+    )
+
     stage1 = []
-    for rlo, rhi in RSI_RANGES:
-        for vol in VOLUME_MIN:
-            params = {
-                "RSILow": rlo,
-                "RSIHigh": rhi,
-                "VolumeMin": vol,
-                "TargetR": TARGET_BASE,
-                "StopMethod": "SIGNAL_LOW",
-                "HoldPlan": HOLD_BASE,
-                "EntryMethod": "NEXT_OPEN",
-                "Stage": "SIGNAL",
-            }
-            t = run_candidate(data, rlo, rhi, vol, TARGET_BASE,
-                              "SIGNAL_LOW", HOLD_BASE, "NEXT_OPEN")
-            m = metrics(t)
-            record_result(stage1, params, m)
 
-    stage1_df = pd.DataFrame(stage1).sort_values(
-        ["Score", "ProfitFactor", "AverageR"], ascending=False
+    for rlo, rhi in RSI_RANGES:
+
+        for vol in VOLUME_MIN:
+
+            params = {
+
+                "RSILow": rlo,
+
+                "RSIHigh": rhi,
+
+                "VolumeMin": vol,
+
+                "TargetR": TARGET_BASE,
+
+                "StopMethod":
+                    "SIGNAL_LOW",
+
+                "HoldPlan":
+                    HOLD_BASE,
+
+                "EntryMethod":
+                    "NEXT_OPEN",
+
+                "Stage":
+                    "SIGNAL",
+            }
+
+            t = run_candidate(
+
+                data,
+
+                rlo,
+                rhi,
+                vol,
+
+                TARGET_BASE,
+
+                "SIGNAL_LOW",
+
+                HOLD_BASE,
+
+                "NEXT_OPEN"
+
+            )
+
+            m = metrics(t)
+
+            record_result(
+                stage1,
+                params,
+                m
+            )
+
+    stage1_df = pd.DataFrame(
+        stage1
     )
 
     if stage1_df.empty:
-        raise RuntimeError("Stage 1 produced no candidate with enough trades.")
 
-    top_signal = stage1_df.head(5)
-
-    # ---------------- Stage 2: exits ----------------
-    stage2 = []
-    for _, s in top_signal.iterrows():
-        rlo = float(s["RSILow"])
-        rhi = float(s["RSIHigh"])
-        vol = float(s["VolumeMin"])
-
-        for target in TARGETS:
-            for stop in STOP_METHODS:
-                for hold in HOLDS:
-                    params = {
-                        "RSILow": rlo,
-                        "RSIHigh": rhi,
-                        "VolumeMin": vol,
-                        "TargetR": target,
-                        "StopMethod": stop,
-                        "HoldPlan": hold,
-                        "EntryMethod": "NEXT_OPEN",
-                        "Stage": "EXIT",
-                    }
-                    t = run_candidate(
-                        data, rlo, rhi, vol, target, stop, hold, "NEXT_OPEN"
-                    )
-                    m = metrics(t)
-                    record_result(stage2, params, m)
-
-    stage2_df = pd.DataFrame(stage2)
-    if not stage2_df.empty:
-        stage2_df = stage2_df.sort_values(
-            ["Score", "ProfitFactor", "AverageR"], ascending=False
+        raise RuntimeError(
+            "Stage 1 produced "
+            "no candidate with "
+            "enough trades."
         )
 
-    # ---------------- Stage 3: entry ----------------
-    stage3 = []
-    finalists = stage2_df.head(10) if not stage2_df.empty else top_signal.head(5)
+    stage1_df = (
+        stage1_df
+        .sort_values(
+            [
+                "Score",
+                "ProfitFactor",
+                "AverageR"
+            ],
+            ascending=False
+        )
+    )
 
-    for _, s in finalists.iterrows():
+    top_signal = (
+        stage1_df
+        .head(5)
+    )
+
+    print(
+        "Stage 1 complete."
+    )
+
+    print()
+
+    # ========================================================
+    # STAGE 2
+    # ========================================================
+
+    print(
+        "STAGE 2 - EXIT OPTIMIZATION"
+    )
+
+    stage2 = []
+
+    for _, s in (
+        top_signal.iterrows()
+    ):
+
+        rlo = float(
+            s["RSILow"]
+        )
+
+        rhi = float(
+            s["RSIHigh"]
+        )
+
+        vol = float(
+            s["VolumeMin"]
+        )
+
+        for target in TARGETS:
+
+            for stop in STOP_METHODS:
+
+                for hold in HOLDS:
+
+                    params = {
+
+                        "RSILow":
+                            rlo,
+
+                        "RSIHigh":
+                            rhi,
+
+                        "VolumeMin":
+                            vol,
+
+                        "TargetR":
+                            target,
+
+                        "StopMethod":
+                            stop,
+
+                        "HoldPlan":
+                            hold,
+
+                        "EntryMethod":
+                            "NEXT_OPEN",
+
+                        "Stage":
+                            "EXIT",
+                    }
+
+                    t = run_candidate(
+
+                        data,
+
+                        rlo,
+                        rhi,
+                        vol,
+
+                        target,
+
+                        stop,
+
+                        hold,
+
+                        "NEXT_OPEN"
+
+                    )
+
+                    m = metrics(t)
+
+                    record_result(
+                        stage2,
+                        params,
+                        m
+                    )
+
+    stage2_df = pd.DataFrame(
+        stage2
+    )
+
+    if not stage2_df.empty:
+
+        stage2_df = (
+            stage2_df
+            .sort_values(
+                [
+                    "Score",
+                    "ProfitFactor",
+                    "AverageR"
+                ],
+                ascending=False
+            )
+        )
+
+    print(
+        "Stage 2 complete."
+    )
+
+    print()
+
+    # ========================================================
+    # STAGE 3
+    # ========================================================
+
+    print(
+        "STAGE 3 - ENTRY OPTIMIZATION"
+    )
+
+    stage3 = []
+
+    if not stage2_df.empty:
+
+        finalists = (
+            stage2_df
+            .head(10)
+        )
+
+    else:
+
+        finalists = (
+            top_signal
+            .head(5)
+        )
+
+    for _, s in (
+        finalists.iterrows()
+    ):
+
+        rlo = float(
+            s["RSILow"]
+        )
+
+        rhi = float(
+            s["RSIHigh"]
+        )
+
+        vol = float(
+            s["VolumeMin"]
+        )
+
+        target = float(
+            s["TargetR"]
+        )
+
+        stop = str(
+            s["StopMethod"]
+        )
+
+        hold = int(
+            s["HoldPlan"]
+        )
+
         for entry in ENTRIES:
-            rlo = float(s["RSILow"])
-            rhi = float(s["RSIHigh"])
-            vol = float(s["VolumeMin"])
-            target = float(s["TargetR"])
-            stop = str(s["StopMethod"])
-            hold = int(s["HoldPlan"])
 
             params = {
-                "RSILow": rlo,
-                "RSIHigh": rhi,
-                "VolumeMin": vol,
-                "TargetR": target,
-                "StopMethod": stop,
-                "HoldPlan": hold,
-                "EntryMethod": entry,
-                "Stage": "ENTRY",
-            }
-            t = run_candidate(
-                data, rlo, rhi, vol, target, stop, hold, entry
-            )
-            m = metrics(t)
-            record_result(stage3, params, m)
 
-    stage3_df = pd.DataFrame(stage3)
+                "RSILow":
+                    rlo,
+
+                "RSIHigh":
+                    rhi,
+
+                "VolumeMin":
+                    vol,
+
+                "TargetR":
+                    target,
+
+                "StopMethod":
+                    stop,
+
+                "HoldPlan":
+                    hold,
+
+                "EntryMethod":
+                    entry,
+
+                "Stage":
+                    "ENTRY",
+            }
+
+            t = run_candidate(
+
+                data,
+
+                rlo,
+                rhi,
+                vol,
+
+                target,
+
+                stop,
+
+                hold,
+
+                entry
+
+            )
+
+            m = metrics(t)
+
+            record_result(
+                stage3,
+                params,
+                m
+            )
+
+    stage3_df = pd.DataFrame(
+        stage3
+    )
+
+    print(
+        "Stage 3 complete."
+    )
+
+    print()
+
+    # ========================================================
+    # FINAL RESULTS
+    # ========================================================
+
+    frames = []
+
+    if not stage1_df.empty:
+        frames.append(
+            stage1_df
+        )
+
+    if not stage2_df.empty:
+        frames.append(
+            stage2_df
+        )
+
+    if not stage3_df.empty:
+        frames.append(
+            stage3_df
+        )
 
     all_results = pd.concat(
-        [stage1_df, stage2_df, stage3_df],
+        frames,
         ignore_index=True
     )
 
     if all_results.empty:
-        raise RuntimeError("No valid optimization results.")
 
-    all_results = all_results.sort_values(
-        ["Score", "ProfitFactor", "AverageR"], ascending=False
+        raise RuntimeError(
+            "No valid optimization results."
+        )
+
+    all_results = (
+        all_results
+        .sort_values(
+            [
+                "Score",
+                "ProfitFactor",
+                "AverageR"
+            ],
+            ascending=False
+        )
+        .reset_index(
+            drop=True
+        )
     )
-    all_results.to_csv("optimization_results.csv", index=False)
 
-    best = all_results.iloc[0].to_dict()
-    with open("best_strategy.json", "w", encoding="utf-8") as f:
-        json.dump(best, f, indent=2)
+    # Save all optimization results
+    all_results.to_csv(
+        "optimization_results.csv",
+        index=False
+    )
 
-    # Re-run the winner and save its trade-level results.
-    t = run_candidate(
+    # Best strategy
+    best = (
+        all_results
+        .iloc[0]
+        .to_dict()
+    )
+
+    with open(
+        "best_strategy.json",
+        "w",
+        encoding="utf-8"
+    ) as f:
+
+        json.dump(
+            best,
+            f,
+            indent=2
+        )
+
+    # Re-run winner
+    best_trades = run_candidate(
+
         data,
-        float(best["RSILow"]),
-        float(best["RSIHigh"]),
-        float(best["VolumeMin"]),
-        float(best["TargetR"]),
-        str(best["StopMethod"]),
-        int(best["HoldPlan"]),
-        str(best["EntryMethod"]),
+
+        float(
+            best["RSILow"]
+        ),
+
+        float(
+            best["RSIHigh"]
+        ),
+
+        float(
+            best["VolumeMin"]
+        ),
+
+        float(
+            best["TargetR"]
+        ),
+
+        str(
+            best["StopMethod"]
+        ),
+
+        int(
+            best["HoldPlan"]
+        ),
+
+        str(
+            best["EntryMethod"]
+        )
+
     )
-    t.to_csv("best_trades.csv", index=False)
+
+    best_trades.to_csv(
+        "best_trades.csv",
+        index=False
+    )
 
     print()
+
     print("=" * 70)
-    print("OPTIMIZATION COMPLETE")
+
+    print(
+        "OPTIMIZATION COMPLETE"
+    )
+
     print("=" * 70)
-    print(json.dumps(best, indent=2))
+
     print()
-    print("Files created:")
-    print("  optimization_results.csv")
-    print("  best_strategy.json")
-    print("  best_trades.csv")
+
+    print(
+        json.dumps(
+            best,
+            indent=2
+        )
+    )
+
+    print()
+
+    print(
+        "Files created:"
+    )
+
+    print(
+        "  optimization_results.csv"
+    )
+
+    print(
+        "  best_strategy.json"
+    )
+
+    print(
+        "  best_trades.csv"
+    )
+
+    print()
+
+    print(
+        "Top 10 strategies:"
+    )
+
+    print()
+
+    print(
+        all_results[
+            [
+                "Stage",
+                "RSILow",
+                "RSIHigh",
+                "VolumeMin",
+                "TargetR",
+                "StopMethod",
+                "HoldPlan",
+                "EntryMethod",
+                "Trades",
+                "WinRatePct",
+                "AverageR",
+                "ProfitFactor",
+                "MaxDrawdownR",
+                "Score",
+            ]
+        ]
+        .head(10)
+        .to_string(
+            index=False
+        )
+    )
 
 
 if __name__ == "__main__":
