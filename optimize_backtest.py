@@ -577,6 +577,7 @@ def trade(
 # RUN CANDIDATE
 # ============================================================
 
+
 def run_candidate(
     data,
     rsi_lo,
@@ -587,21 +588,140 @@ def run_candidate(
     hold_days,
     entry_method
 ):
+    """
+    Fast optimizer engine.
 
+    Signal filtering is vectorized with NumPy, and optimization returns
+    only the R column instead of constructing a large trade dictionary
+    for every parameter combination. Detailed trades are generated only
+    once, for the final winning strategy.
+    """
+    r_values = []
+
+    for symbol, df in data.items():
+        close = df["Close"].to_numpy(dtype=float)
+        open_ = df["Open"].to_numpy(dtype=float)
+        high = df["High"].to_numpy(dtype=float)
+        low = df["Low"].to_numpy(dtype=float)
+        atr = df["ATR"].to_numpy(dtype=float)
+        rsi_arr = df["RSI"].to_numpy(dtype=float)
+        vol_arr = df["VolumeRatio"].to_numpy(dtype=float)
+
+        ema20 = df["EMA20"].to_numpy(dtype=float)
+        ema50 = df["EMA50"].to_numpy(dtype=float)
+        ema200 = df["EMA200"].to_numpy(dtype=float)
+
+        mask = (
+            (close > ema20)
+            & (ema20 > ema50)
+            & (ema50 > ema200)
+            & (rsi_arr >= rsi_lo)
+            & (rsi_arr <= rsi_hi)
+            & (vol_arr >= volume_min)
+        )
+
+        candidates = np.flatnonzero(mask)
+        last_signal_i = -9999
+
+        for i in candidates:
+            i = int(i)
+
+            if i - last_signal_i < 15:
+                continue
+
+            if i + 1 >= len(df):
+                continue
+
+            next_i = i + 1
+
+            if entry_method == "NEXT_OPEN":
+                entry = float(open_[next_i])
+            else:
+                signal_high = float(high[i])
+
+                if float(high[next_i]) < signal_high:
+                    continue
+
+                entry = min(
+                    float(open_[next_i]),
+                    signal_high
+                )
+
+            if stop_method == "SIGNAL_LOW":
+                stop = float(low[i])
+            elif stop_method == "ATR_1":
+                stop = entry - float(atr[i])
+            else:
+                stop = entry - 1.5 * float(atr[i])
+
+            risk = entry - stop
+
+            if not np.isfinite(risk) or risk <= 0:
+                continue
+
+            target = entry + target_r * risk
+
+            last_i = min(
+                next_i + hold_days - 1,
+                len(df) - 1
+            )
+
+            exit_price = float(close[last_i])
+
+            # Preserve original conservative ordering:
+            # stop is checked before target.
+            for j in range(next_i, last_i + 1):
+                if low[j] <= stop:
+                    exit_price = stop
+                    break
+
+                if high[j] >= target:
+                    exit_price = target
+                    break
+
+            effective_entry = (
+                entry * (1 + SLIPPAGE_PCT_PER_SIDE / 100)
+            )
+
+            effective_exit = (
+                exit_price * (1 - SLIPPAGE_PCT_PER_SIDE / 100)
+            )
+
+            r_value = (
+                effective_exit - effective_entry
+            ) / risk
+
+            if np.isfinite(r_value):
+                r_values.append(float(r_value))
+
+            last_signal_i = i
+
+    # Keep the old metrics() interface.
+    return pd.DataFrame({"R": r_values})
+
+
+# ============================================================
+# DETAILED WINNER TRADES
+# ============================================================
+
+def build_detailed_trades(
+    data,
+    rsi_lo,
+    rsi_hi,
+    volume_min,
+    target_r,
+    stop_method,
+    hold_days,
+    entry_method
+):
+    """Create full trade records only for the final winning strategy."""
     trades = []
 
     for symbol, df in data.items():
-
         last_signal_i = -9999
 
-        for i in range(
-            len(df) - 1
-        ):
-
-            if (
-                i - last_signal_i
-                < 15
-            ):
+        for i in range(len(df) - 1):
+            if i - last_signal_i < 15:
                 continue
 
             if not signal(
@@ -625,54 +745,25 @@ def run_candidate(
             if t is None:
                 continue
 
-            t["Symbol"] = (
-                symbol.replace(
-                    ".NS",
-                    ""
-                )
-            )
-
-            t["RSI"] = round(
-                float(
-                    df.iloc[i]["RSI"]
-                ),
-                2
-            )
-
+            t["Symbol"] = symbol.replace(".NS", "")
+            t["RSI"] = round(float(df.iloc[i]["RSI"]), 2)
             t["VolumeRatio"] = round(
-                float(
-                    df.iloc[i][
-                        "VolumeRatio"
-                    ]
-                ),
+                float(df.iloc[i]["VolumeRatio"]),
                 2
             )
-
             t["TargetR"] = target_r
-
-            t["StopMethod"] = (
-                stop_method
-            )
-
-            t["HoldPlan"] = (
-                hold_days
-            )
-
-            t["EntryMethod"] = (
-                entry_method
-            )
-
+            t["StopMethod"] = stop_method
+            t["HoldPlan"] = hold_days
+            t["EntryMethod"] = entry_method
             t["RSILow"] = rsi_lo
             t["RSIHigh"] = rsi_hi
             t["VolumeMin"] = volume_min
 
             trades.append(t)
-
             last_signal_i = i
 
-    return pd.DataFrame(
-        trades
-    )
+    return pd.DataFrame(trades)
+
 
 
 # ============================================================
@@ -846,6 +937,10 @@ def main():
         f"{SLIPPAGE_PCT_PER_SIDE}%"
         " per side"
     )
+    print(
+        "Engine: FAST NumPy signal filtering + lightweight R evaluation",
+        flush=True
+    )
 
     print()
 
@@ -977,6 +1072,10 @@ def main():
     stage1_df = pd.DataFrame(
         stage1
     )
+    stage1_df.to_csv(
+        "stage1_checkpoint.csv",
+        index=False
+    )
 
     if stage1_df.empty:
 
@@ -1019,6 +1118,14 @@ def main():
     )
 
     stage2 = []
+
+    stage2_total = (
+        len(top_signal)
+        * len(TARGETS)
+        * len(STOP_METHODS)
+        * len(HOLDS)
+    )
+    stage2_done = 0
 
     for _, s in (
         top_signal.iterrows()
@@ -1097,6 +1204,10 @@ def main():
 
     stage2_df = pd.DataFrame(
         stage2
+    )
+    stage2_df.to_csv(
+        "stage2_checkpoint.csv",
+        index=False
     )
 
     if not stage2_df.empty:
@@ -1230,6 +1341,10 @@ def main():
     stage3_df = pd.DataFrame(
         stage3
     )
+    stage3_df.to_csv(
+        "stage3_checkpoint.csv",
+        index=False
+    )
 
     print(
         "Stage 3 complete.",
@@ -1311,7 +1426,7 @@ def main():
         )
 
     # Re-run winner
-    best_trades = run_candidate(
+    best_trades = build_detailed_trades(
 
         data,
 
