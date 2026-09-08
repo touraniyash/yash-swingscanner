@@ -260,11 +260,33 @@ function renderJournal(){
   document.getElementById('jPnl').textContent=money(pnl);
   document.getElementById('jPnl').className='big '+(pnl>=0?'pos':'neg');
   if(!a.length){document.getElementById('journalTable').innerHTML='<div class="empty">No paper trades yet.</div>';return}
-  let h='<table><thead><tr><th>Stock</th><th>Entry</th><th>Stop</th><th>Target</th><th>Qty</th><th>Status</th><th>Exit</th><th>Reason</th><th>P/L</th><th>Notes</th><th></th></tr></thead><tbody>';
-  a.forEach((x,i)=>h+=`<tr><td><b>${esc(x.symbol)}</b><br><span class="small">${esc(x.entryDate)}</span></td><td>${x.entry}</td><td>${x.stop}</td><td>${x.target}</td><td>${x.qty}</td><td>${esc(x.status)}</td><td>${x.exit||'—'}</td><td>${esc(x.reason||'—')}</td><td class="${Number(x.pnl)>=0?'pos':'neg'}">${x.status==='CLOSED'?money(x.pnl):'—'}</td><td>${esc(x.notes||'')}</td><td><button class="secondary" onclick="deleteTrade(${x.id})">Delete</button></td></tr>`);
+  let h='<table><thead><tr><th>Stock</th><th>Entry</th><th>Stop</th><th>Target</th><th>Qty</th><th>Status</th><th>Exit</th><th>Reason</th><th>P/L</th><th>Notes</th><th>Actions</th></tr></thead><tbody>';
+  a.forEach((x,i)=>h+=`<tr><td><b>${esc(x.symbol)}</b><br><span class="small">${esc(x.entryDate)}</span></td><td>${x.entry}</td><td>${x.stop}</td><td>${x.target}</td><td>${x.qty}</td><td>${esc(x.status)}</td><td>${x.exit||'—'}</td><td>${esc(x.reason||'—')}</td><td class="${Number(x.pnl)>=0?'pos':'neg'}">${x.status==='CLOSED'?money(x.pnl):'—'}</td><td>${esc(x.notes||'')}</td><td>${x.status==='OPEN'?`<button class="primary" onclick="closeTrade(${x.id})">Close Trade</button> `:''}<button class="secondary" onclick="deleteTrade(${x.id})">Delete</button></td></tr>`);
   h+='</tbody></table>';document.getElementById('journalTable').innerHTML=h;
 }
-function deleteTrade(id){if(confirm('Delete this journal entry?')){saveJournal(getJournal().filter(x=>x.id!==id));renderJournal()}}
+function deleteTrade(id){
+  if(confirm('Delete this journal entry?')){
+    saveJournal(getJournal().filter(x=>x.id!==id));
+    renderJournal();
+  }
+}
+function closeTrade(id){
+  const a=getJournal(), t=a.find(x=>x.id===id);
+  if(!t || t.status==='CLOSED') return;
+  const exit=prompt(`Exit price for ${t.symbol}:`, t.target || '');
+  if(exit===null) return;
+  const exitPrice=Number(exit);
+  if(!exitPrice || exitPrice<=0){alert('Please enter a valid exit price.');return}
+  const reason=prompt('Exit reason: TARGET, STOP, TIME or MANUAL','TARGET');
+  if(reason===null) return;
+  t.status='CLOSED';
+  t.exit=exitPrice;
+  t.exitDate=new Date().toISOString().slice(0,10);
+  t.reason=reason.toUpperCase();
+  t.pnl=(exitPrice-Number(t.entry))*Number(t.qty||0);
+  saveJournal(a);
+  renderJournal();
+}
 function clearJournal(){if(confirm('Delete ALL paper journal entries from this browser?')){localStorage.removeItem(LS_KEY);renderJournal()}}
 function exportJournal(){
   const a=getJournal();if(!a.length){alert('Journal is empty.');return}
