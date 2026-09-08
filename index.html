@@ -1,23 +1,275 @@
-<!doctype html>
-<html lang="en"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Yash Swing Scanner V3</title><link rel="stylesheet" href="styles.css">
-</head><body>
-<header><div><h1>Yash Swing Scanner <span>V3</span></h1><p>Sector → Stock → Trade Rating /100</p></div><span id="updated">Loading…</span></header>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Swing Trading Command Center</title>
+<style>
+:root{
+  --bg:#0b1020;--panel:#121a2b;--panel2:#182238;--text:#eef3ff;--muted:#93a4c3;
+  --line:#263452;--accent:#6ea8fe;--green:#39d98a;--red:#ff6b7a;--yellow:#f5c451;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{padding:20px 24px;border-bottom:1px solid var(--line);background:#0e1527;position:sticky;top:0;z-index:10}
+.brand{font-size:21px;font-weight:800}.sub{color:var(--muted);margin-top:4px}
+nav{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+nav button{background:transparent;color:var(--muted);border:1px solid var(--line);padding:9px 14px;border-radius:9px;cursor:pointer}
+nav button.active,nav button:hover{background:var(--panel2);color:var(--text);border-color:var(--accent)}
+main{max-width:1450px;margin:auto;padding:22px}
+.page{display:none}.page.active{display:block}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
+.card h3{margin:0 0 8px;font-size:13px;color:var(--muted);font-weight:600}
+.big{font-size:25px;font-weight:800}
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;margin:15px 0}
+input,select,textarea{background:#0c1425;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:9px}
+input{min-width:180px}
+button.primary{background:var(--accent);color:#06101f;border:0;border-radius:8px;padding:9px 14px;font-weight:700;cursor:pointer}
+button.secondary{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:9px 14px;cursor:pointer}
+.tablewrap{overflow:auto;border:1px solid var(--line);border-radius:12px}
+table{width:100%;border-collapse:collapse;min-width:1000px}
+th,td{padding:10px 11px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+th{color:var(--muted);font-size:12px;background:#10192b;position:sticky;top:0}
+tr:hover td{background:#141f34}
+.badge{display:inline-block;padding:4px 8px;border-radius:999px;font-size:11px;font-weight:800}
+.buy{background:rgba(57,217,138,.14);color:var(--green)}.watch{background:rgba(245,196,81,.14);color:var(--yellow)}
+.wait{background:rgba(110,168,254,.12);color:var(--accent)}.avoid{background:rgba(255,107,122,.12);color:var(--red)}
+.pos{color:var(--green)}.neg{color:var(--red)}
+.muted{color:var(--muted)}
+.section-title{margin:26px 0 10px;font-size:17px}
+.notice{background:#111c31;border:1px solid var(--line);padding:13px;border-radius:10px;color:var(--muted);line-height:1.5}
+.formgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.formgrid label{display:flex;flex-direction:column;gap:5px;color:var(--muted);font-size:12px}
+.full{grid-column:1/-1}
+.empty{padding:35px;text-align:center;color:var(--muted)}
+.small{font-size:12px;color:var(--muted)}
+.kpis{margin-bottom:20px}
+@media(max-width:900px){.grid,.formgrid{grid-template-columns:1fr 1fr}}
+@media(max-width:600px){main{padding:12px}.grid,.formgrid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">📈 Swing Trading Command Center</div>
+  <div class="sub">₹1,00,000 paper account · 0.5% risk/trade · max 5 positions · Fibonacci OFF</div>
+  <nav>
+    <button class="nav active" data-page="dashboard">Dashboard</button>
+    <button class="nav" data-page="scanner">🔎 Scanner</button>
+    <button class="nav" data-page="journal">📒 Journal</button>
+    <button class="nav" data-page="rules">⚙ Strategy Rules</button>
+  </nav>
+</header>
+
 <main>
-<div class="notice">Educational screening tool — confirm chart structure, liquidity, stop-loss and risk/reward before trading.</div>
-<div class="cards">
-<div><small>Strong sectors</small><b id="sc">—</b></div><div><small>Stocks scanned</small><b id="nc">—</b></div>
-<div><small>BUY NOW</small><b id="bc">—</b></div><div><small>Top rating</small><b id="tr">—</b></div>
-</div>
-<section><div class="title"><h2>Strongest sectors</h2><span>Ranked by sector score /20</span></div>
-<div class="table"><table><thead><tr><th>#</th><th>Sector / Industry</th><th>1W</th><th>1M</th><th>Breadth</th><th>Score</th></tr></thead><tbody id="sectors"></tbody></table></div></section>
-<section><div class="title"><h2>Top 10 swing setups</h2><span>Best candidates first</span></div>
-<div id="topcards"></div></section>
-<section><div class="title"><h2>All screened stocks</h2><span>Use filters to narrow the list</span></div>
-<div class="filters"><button class="active" data-f="ALL">All</button><button data-f="BUY NOW">BUY NOW</button><button data-f="WATCH">BUY / WATCH</button><button data-f="WAIT">WAIT</button></div>
-<div class="table"><table><thead><tr><th>Stock</th><th>Sector</th><th>Rating</th><th>Action</th><th>Entry</th><th>Stop</th><th>Target</th><th>R:R</th><th>RSI</th><th>Vol</th><th>1W</th><th>1M</th><th>Setup</th></tr></thead><tbody id="stocks"></tbody></table></div></section>
-<section><h2>How the /100 score works</h2><div class="scoregrid">
-<div><b>20</b><span>Sector strength</span></div><div><b>25</b><span>EMA trend</span></div><div><b>15</b><span>Momentum</span></div><div><b>10</b><span>RSI</span></div><div><b>10</b><span>Volume</span></div><div><b>10</b><span>Breakout / pullback</span></div><div><b>10</b><span>Risk / reward</span></div>
-</div><p class="note">Signal thresholds: 90–100 BUY NOW · 80–89 BUY / WATCH · 70–79 WAIT · below 70 AVOID. A high score is not a guarantee of profit.</p></section>
-</main><script src="app.js"></script></body></html>
+<section id="dashboard" class="page active">
+  <h2>Dashboard</h2>
+  <div class="grid kpis">
+    <div class="card"><h3>Paper Capital</h3><div class="big">₹1,00,000</div></div>
+    <div class="card"><h3>Risk / Trade</h3><div class="big">₹500</div></div>
+    <div class="card"><h3>Max Positions</h3><div class="big">5</div></div>
+    <div class="card"><h3>Scanner Status</h3><div class="big" id="dashStatus">Loading…</div></div>
+  </div>
+  <div class="grid">
+    <div class="card"><h3>BUY NOW</h3><div class="big" id="buyCount">—</div></div>
+    <div class="card"><h3>BUY / WATCH</h3><div class="big" id="watchCount">—</div></div>
+    <div class="card"><h3>Paper Trades</h3><div class="big" id="tradeCount">0</div></div>
+    <div class="card"><h3>Closed P/L</h3><div class="big" id="closedPnl">₹0</div></div>
+  </div>
+  <h3 class="section-title">Top scanner candidates</h3>
+  <div id="topCandidates" class="tablewrap"><div class="empty">Loading scanner data…</div></div>
+</section>
+
+<section id="scanner" class="page">
+  <h2>🔎 Scanner</h2>
+  <div class="notice">This page reads the latest <b>data.json</b> generated by your GitHub Actions scanner. The scoring logic remains based on your existing sector/stock scoring system; use the frozen paper-trading rules for actual entries.</div>
+  <div class="toolbar">
+    <input id="search" placeholder="Search stock or sector">
+    <select id="actionFilter"><option value="">All actions</option><option>BUY NOW</option><option>BUY / WATCH</option><option>WAIT</option><option>AVOID</option></select>
+    <select id="setupFilter"><option value="">All setups</option><option>Breakout</option><option>Pullback</option></select>
+    <button class="primary" onclick="loadData(true)">↻ Refresh</button>
+  </div>
+  <div class="small" id="updated"></div>
+  <div id="scannerTable" class="tablewrap"></div>
+</section>
+
+<section id="journal" class="page">
+  <h2>📒 Paper Trading Journal</h2>
+  <div class="notice">Journal entries are stored in this browser using local storage. Record the trade when you actually take the paper trade; don't back-fill missed signals as if they were trades.</div>
+  <h3 class="section-title">Add paper trade</h3>
+  <div class="card">
+    <div class="formgrid">
+      <label>Stock<input id="jSymbol" placeholder="RELIANCE"></label>
+      <label>Sector<input id="jSector" placeholder="Energy"></label>
+      <label>Entry date<input id="jEntryDate" type="date"></label>
+      <label>Entry price<input id="jEntry" type="number" step="0.01"></label>
+      <label>Stop loss<input id="jStop" type="number" step="0.01"></label>
+      <label>Target<input id="jTarget" type="number" step="0.01"></label>
+      <label>Quantity<input id="jQty" type="number" step="1"></label>
+      <label>Rating<input id="jRating" type="number" min="0" max="100"></label>
+      <label>Status<select id="jStatus"><option>OPEN</option><option>CLOSED</option></select></label>
+      <label>Exit date<input id="jExitDate" type="date"></label>
+      <label>Exit price<input id="jExit" type="number" step="0.01"></label>
+      <label>Exit reason<select id="jReason"><option></option><option>TARGET</option><option>STOP</option><option>TIME</option><option>MANUAL</option></select></label>
+      <label class="full">Notes<textarea id="jNotes" rows="2" placeholder="Why did you take it? Execution notes?"></textarea></label>
+    </div>
+    <div class="toolbar">
+      <button class="primary" onclick="addTrade()">Add to Journal</button>
+      <button class="secondary" onclick="exportJournal()">Export CSV</button>
+      <button class="secondary" onclick="clearJournal()">Clear all</button>
+    </div>
+  </div>
+  <h3 class="section-title">Journal summary</h3>
+  <div class="grid">
+    <div class="card"><h3>Total trades</h3><div class="big" id="jTotal">0</div></div>
+    <div class="card"><h3>Closed trades</h3><div class="big" id="jClosed">0</div></div>
+    <div class="card"><h3>Win rate</h3><div class="big" id="jWinRate">—</div></div>
+    <div class="card"><h3>Total P/L</h3><div class="big" id="jPnl">₹0</div></div>
+  </div>
+  <div id="journalTable" class="tablewrap"></div>
+</section>
+
+<section id="rules" class="page">
+  <h2>⚙ Frozen Paper-Trading Rules</h2>
+  <div class="grid">
+    <div class="card"><h3>Trend</h3><div>Price &gt; EMA20 &gt; EMA50 &gt; EMA200</div></div>
+    <div class="card"><h3>RSI</h3><div>55–65</div></div>
+    <div class="card"><h3>Volume</h3><div>≥ 2.5× 20-day average</div></div>
+    <div class="card"><h3>Stop</h3><div>1.5 ATR</div></div>
+    <div class="card"><h3>Target</h3><div>3R</div></div>
+    <div class="card"><h3>Maximum hold</h3><div>15 trading days</div></div>
+    <div class="card"><h3>Capital</h3><div>₹1,00,000</div></div>
+    <div class="card"><h3>Risk</h3><div>0.5% = ₹500 initially</div></div>
+    <div class="card"><h3>Positions</h3><div>Maximum 5 open</div></div>
+    <div class="card"><h3>Fibonacci</h3><div>OFF — not part of the test</div></div>
+    <div class="card"><h3>Paper test</h3><div>30–50 real forward trades</div></div>
+    <div class="card"><h3>Goal</h3><div>Validate execution, not chase a higher win rate</div></div>
+  </div>
+  <h3 class="section-title">Position-size formula</h3>
+  <div class="notice"><b>Quantity = floor(₹500 ÷ (Entry − Stop))</b> for the initial ₹1 lakh account. Recalculate the rupee risk as the account changes: <b>Risk = 0.5% × current equity</b>. Also check available cash before accepting a trade.</div>
+  <h3 class="section-title">Important</h3>
+  <div class="notice">The scanner's ranking is a selection aid. A paper trade should only be recorded when the actual frozen entry condition is met and you can define entry, stop, target and quantity before entry. This tool is for paper trading and research, not a guarantee of returns.</div>
+</section>
+</main>
+
+<script>
+const DATA_URL = 'data.json';
+let scanData = {stocks:[], updated:null};
+const LS_KEY='swingPaperJournalV1';
+
+function money(n){return '₹'+Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:2})}
+function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
+function badge(a){
+  let c=a==='BUY NOW'?'buy':a==='BUY / WATCH'?'watch':a==='WAIT'?'wait':'avoid';
+  return `<span class="badge ${c}">${esc(a)}</span>`;
+}
+function showPage(id){
+  document.querySelectorAll('.page').forEach(x=>x.classList.toggle('active',x.id===id));
+  document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x.dataset.page===id));
+}
+document.querySelectorAll('.nav').forEach(b=>b.onclick=()=>showPage(b.dataset.page));
+
+async function loadData(force=false){
+  try{
+    const r=await fetch(DATA_URL+(force?'?t='+Date.now():''),{cache:'no-store'});
+    if(!r.ok) throw new Error('data.json not found');
+    scanData=await r.json();
+    document.getElementById('dashStatus').textContent='LIVE';
+    document.getElementById('updated').textContent='Last scanner update: '+(scanData.updated||'unknown');
+    renderScanner();
+    renderDashboard();
+  }catch(e){
+    document.getElementById('dashStatus').textContent='OFFLINE';
+    document.getElementById('scannerTable').innerHTML=`<div class="empty">Could not load data.json. Run the scanner GitHub Action first.</div>`;
+    document.getElementById('topCandidates').innerHTML=`<div class="empty">No scanner data available.</div>`;
+  }
+}
+function renderDashboard(){
+  const s=scanData.stocks||[];
+  document.getElementById('buyCount').textContent=s.filter(x=>x.action==='BUY NOW').length;
+  document.getElementById('watchCount').textContent=s.filter(x=>x.action==='BUY / WATCH').length;
+  const top=s.filter(x=>x.action==='BUY NOW'||x.action==='BUY / WATCH').slice(0,10);
+  document.getElementById('topCandidates').innerHTML=table(top,true);
+  renderJournal();
+}
+function table(rows,small=false){
+  if(!rows.length)return '<div class="empty">No matching stocks.</div>';
+  let cols=small
+    ? [['symbol','Stock'],['sector','Sector'],['rating','Rating'],['action','Action'],['entry','Entry'],['stop','Stop'],['target','Target'],['rsi','RSI'],['vol','Vol ×']]
+    : [['symbol','Stock'],['sector','Sector'],['rating','Rating'],['action','Action'],['setup','Setup'],['entry','Entry'],['stop','Stop'],['target','Target'],['rr','R:R'],['rsi','RSI'],['vol','Vol ×'],['w1','1W %'],['m1','1M %']];
+  let h='<table><thead><tr>'+cols.map(c=>`<th>${c[1]}</th>`).join('')+'</tr></thead><tbody>';
+  for(const x of rows){
+    h+='<tr>'+cols.map(([k])=>{
+      let v=x[k];
+      if(k==='action')return `<td>${badge(v)}</td>`;
+      if(['w1','m1'].includes(k)) return `<td class="${Number(v)>=0?'pos':'neg'}">${Number(v).toFixed(2)}%</td>`;
+      if(['entry','stop','target'].includes(k)) return `<td>${Number(v).toFixed(2)}</td>`;
+      if(k==='rating')return `<td><b>${v}</b>/100</td>`;
+      if(k==='rr')return `<td>${Number(v).toFixed(2)}R</td>`;
+      if(k==='rsi'||k==='vol')return `<td>${Number(v).toFixed(2)}</td>`;
+      return `<td>${esc(v)}</td>`;
+    }).join('')+'</tr>';
+  }
+  return h+'</tbody></table>';
+}
+function renderScanner(){
+  let rows=[...(scanData.stocks||[])];
+  const q=(document.getElementById('search')?.value||'').toLowerCase();
+  const af=document.getElementById('actionFilter')?.value||'';
+  const sf=document.getElementById('setupFilter')?.value||'';
+  rows=rows.filter(x=>(!q||String(x.symbol).toLowerCase().includes(q)||String(x.sector).toLowerCase().includes(q))&&(!af||x.action===af)&&(!sf||x.setup===sf));
+  document.getElementById('scannerTable').innerHTML=table(rows,false);
+}
+['search','actionFilter','setupFilter'].forEach(id=>document.getElementById(id).addEventListener('input',renderScanner));
+
+function getJournal(){try{return JSON.parse(localStorage.getItem(LS_KEY)||'[]')}catch{return[]}}
+function saveJournal(a){localStorage.setItem(LS_KEY,JSON.stringify(a))}
+function addTrade(){
+  const entry=Number(document.getElementById('jEntry').value);
+  const stop=Number(document.getElementById('jStop').value);
+  const target=Number(document.getElementById('jTarget').value);
+  const qty=Number(document.getElementById('jQty').value);
+  if(!document.getElementById('jSymbol').value||!entry||!stop||!qty){alert('Enter stock, entry, stop and quantity.');return}
+  const t={
+    id:Date.now(),symbol:document.getElementById('jSymbol').value.toUpperCase(),
+    sector:document.getElementById('jSector').value,entryDate:document.getElementById('jEntryDate').value,
+    entry,stop,target,qty,rating:document.getElementById('jRating').value,
+    status:document.getElementById('jStatus').value,exitDate:document.getElementById('jExitDate').value,
+    exit:Number(document.getElementById('jExit').value)||0,reason:document.getElementById('jReason').value,
+    notes:document.getElementById('jNotes').value
+  };
+  if(t.status==='CLOSED'&&t.exit)t.pnl=(t.exit-t.entry)*t.qty; else t.pnl=0;
+  const a=getJournal();a.unshift(t);saveJournal(a);renderJournal();
+  ['jSymbol','jSector','jEntryDate','jEntry','jStop','jTarget','jQty','jRating','jExitDate','jExit','jNotes'].forEach(id=>document.getElementById(id).value='');
+}
+function renderJournal(){
+  const a=getJournal(), closed=a.filter(x=>x.status==='CLOSED'&&x.exit);
+  const pnl=closed.reduce((s,x)=>s+Number(x.pnl||0),0);
+  const wins=closed.filter(x=>Number(x.pnl)>0).length;
+  document.getElementById('tradeCount').textContent=a.length;
+  document.getElementById('closedPnl').textContent=money(pnl);
+  document.getElementById('closedPnl').className='big '+(pnl>=0?'pos':'neg');
+  document.getElementById('jTotal').textContent=a.length;
+  document.getElementById('jClosed').textContent=closed.length;
+  document.getElementById('jWinRate').textContent=closed.length?(wins/closed.length*100).toFixed(1)+'%':'—';
+  document.getElementById('jPnl').textContent=money(pnl);
+  document.getElementById('jPnl').className='big '+(pnl>=0?'pos':'neg');
+  if(!a.length){document.getElementById('journalTable').innerHTML='<div class="empty">No paper trades yet.</div>';return}
+  let h='<table><thead><tr><th>Stock</th><th>Entry</th><th>Stop</th><th>Target</th><th>Qty</th><th>Status</th><th>Exit</th><th>Reason</th><th>P/L</th><th>Notes</th><th></th></tr></thead><tbody>';
+  a.forEach((x,i)=>h+=`<tr><td><b>${esc(x.symbol)}</b><br><span class="small">${esc(x.entryDate)}</span></td><td>${x.entry}</td><td>${x.stop}</td><td>${x.target}</td><td>${x.qty}</td><td>${esc(x.status)}</td><td>${x.exit||'—'}</td><td>${esc(x.reason||'—')}</td><td class="${Number(x.pnl)>=0?'pos':'neg'}">${x.status==='CLOSED'?money(x.pnl):'—'}</td><td>${esc(x.notes||'')}</td><td><button class="secondary" onclick="deleteTrade(${x.id})">Delete</button></td></tr>`);
+  h+='</tbody></table>';document.getElementById('journalTable').innerHTML=h;
+}
+function deleteTrade(id){if(confirm('Delete this journal entry?')){saveJournal(getJournal().filter(x=>x.id!==id));renderJournal()}}
+function clearJournal(){if(confirm('Delete ALL paper journal entries from this browser?')){localStorage.removeItem(LS_KEY);renderJournal()}}
+function exportJournal(){
+  const a=getJournal();if(!a.length){alert('Journal is empty.');return}
+  const cols=['symbol','sector','entryDate','entry','stop','target','qty','rating','status','exitDate','exit','reason','pnl','notes'];
+  const csv=[cols.join(','),...a.map(x=>cols.map(c=>`"${String(x[c]??'').replaceAll('"','""')}"`).join(','))].join('\n');
+  const blob=new Blob([csv],{type:'text/csv'}),url=URL.createObjectURL(blob),el=document.createElement('a');
+  el.href=url;el.download='paper_trading_journal.csv';el.click();URL.revokeObjectURL(url);
+}
+loadData();
+renderJournal();
+</script>
+</body>
+</html>
