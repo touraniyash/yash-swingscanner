@@ -146,7 +146,7 @@ tr:hover td{background:#141f34}
     <div class="card"><h3>Goal</h3><div>Validate execution, not chase a higher win rate</div></div>
   </div>
   <h3 class="section-title">Position-size formula</h3>
-  <div class="notice"><b>Quantity = floor(₹500 ÷ (Entry − Stop))</b> for the initial ₹1 lakh account. Recalculate the rupee risk as the account changes: <b>Risk = 0.5% × current equity</b>. Also check available cash before accepting a trade.</div>
+  <div class="notice"><b>The Scanner calculates Quantity automatically:</b> floor(₹500 ÷ (Entry − Stop)). It rounds down so planned risk stays at or below ₹500.</div>
   <h3 class="section-title">Important</h3>
   <div class="notice">The scanner's ranking is a selection aid. A paper trade should only be recorded when the actual frozen entry condition is met and you can define entry, stop, target and quantity before entry. This tool is for paper trading and research, not a guarantee of returns.</div>
 </section>
@@ -192,15 +192,20 @@ function renderDashboard(){
   document.getElementById('topCandidates').innerHTML=table(top,true);
   renderJournal();
 }
+function calcQty(x){ const entry=Number(x.entry), stop=Number(x.stop), risk=500; if(!entry||!stop||entry<=stop)return {qty:0,totalRisk:0}; const qty=Math.floor(risk/(entry-stop)); return {qty,totalRisk:qty*(entry-stop)}; }
+function addScannerTrade(i){ const x=(scanData.stocks||[])[i]; if(!x)return; const q=calcQty(x); document.getElementById('jSymbol').value=x.symbol||''; document.getElementById('jSector').value=x.sector||''; document.getElementById('jEntry').value=x.entry||''; document.getElementById('jStop').value=x.stop||''; document.getElementById('jTarget').value=x.target||''; document.getElementById('jQty').value=q.qty||''; document.getElementById('jRating').value=x.rating||''; document.getElementById('jStatus').value='OPEN'; showPage('journal'); }
 function table(rows,small=false){
   if(!rows.length)return '<div class="empty">No matching stocks.</div>';
   let cols=small
-    ? [['symbol','Stock'],['sector','Sector'],['rating','Rating'],['action','Action'],['entry','Entry'],['stop','Stop'],['target','Target'],['rsi','RSI'],['vol','Vol ×']]
-    : [['symbol','Stock'],['sector','Sector'],['rating','Rating'],['action','Action'],['setup','Setup'],['entry','Entry'],['stop','Stop'],['target','Target'],['rr','R:R'],['rsi','RSI'],['vol','Vol ×'],['w1','1W %'],['m1','1M %']];
-  let h='<table><thead><tr>'+cols.map(c=>`<th>${c[1]}</th>`).join('')+'</tr></thead><tbody>';
+    ? [['symbol','Stock'],['sector','Sector'],['rating','Rating'],['action','Action'],['entry','Entry'],['stop','Stop'],['target','Target'],['qty','Qty'],['risk','Risk']]
+    : [['symbol','Stock'],['sector','Sector'],['rating','Rating'],['action','Action'],['setup','Setup'],['entry','Entry'],['stop','Stop'],['target','Target'],['qty','Qty'],['risk','Risk'],['rr','R:R'],['rsi','RSI'],['vol','Vol ×'],['w1','1W %'],['m1','1M %']];
+  let h='<table><thead><tr>'+cols.map(c=>`<th>${c[1]}</th>`).join('')+'<th>Trade</th></tr></thead><tbody>';
   for(const x of rows){
+    const q=calcQty(x);
     h+='<tr>'+cols.map(([k])=>{
       let v=x[k];
+      if(k==='qty')return `<td><b>${q.qty}</b></td>`;
+      if(k==='risk')return `<td>${money(q.totalRisk)}</td>`;
       if(k==='action')return `<td>${badge(v)}</td>`;
       if(['w1','m1'].includes(k)) return `<td class="${Number(v)>=0?'pos':'neg'}">${Number(v).toFixed(2)}%</td>`;
       if(['entry','stop','target'].includes(k)) return `<td>${Number(v).toFixed(2)}</td>`;
@@ -208,7 +213,7 @@ function table(rows,small=false){
       if(k==='rr')return `<td>${Number(v).toFixed(2)}R</td>`;
       if(k==='rsi'||k==='vol')return `<td>${Number(v).toFixed(2)}</td>`;
       return `<td>${esc(v)}</td>`;
-    }).join('')+'</tr>';
+    }).join('')+`<td><button class="primary" onclick="addScannerTrade(${(scanData.stocks||[]).indexOf(x)})">Add to Journal</button></td></tr>`;
   }
   return h+'</tbody></table>';
 }
